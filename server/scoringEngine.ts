@@ -33,7 +33,8 @@ interface TreeSplitNode {
   split_feature: number;
   split_feature_name?: keyof FeatureVector;
   threshold: number;
-  decision_type: '<=';
+  decision_type: '<=' | 'no_greater';
+  default_left?: boolean;
   internal_value?: number;
   internal_count?: number;
   left_child: TreeNode;
@@ -52,15 +53,26 @@ interface GbdtModelArtifact {
   name: string;
   version: string;
   feature_names: (keyof FeatureVector)[];
-  base_score_logit: number;
-  platt_a: number;
-  platt_b: number;
+  base_score_logit?: number;
+  platt_a?: number;
+  platt_b?: number;
   tree_info: {
     tree_index: number;
     num_leaves: number;
     shrinkage: number;
     tree_structure: TreeNode;
   }[];
+}
+
+interface PythonScoreResponse {
+  engine: string;
+  lightgbm_version?: string;
+  model_version: string;
+  raw_score: number;
+  raw_margin: number;
+  calibrated_probability: number;
+  attributions: FeatureAttribution[];
+  top_tree_rules: TreeRuleHit[];
 }
 
 function sigmoid(x: number): number {
@@ -89,6 +101,9 @@ export class CreditScoringService {
   private modelRawSha256 = '';
   private modelLoaded = true;
   private auditChannelHealthy = true;
+  private pythonProxyHealthy = false;
+  private readonly scoringApiUrl = (process.env.SCORING_API_URL || '').trim().replace(/\/+$/, '');
+  private readonly allowPythonFallback = process.env.ALLOW_PYTHON_FALLBACK !== 'false';
   private readonly repo = new CreditRepository();
 
   constructor() {
@@ -143,6 +158,23 @@ export class CreditScoringService {
       }
       return logs.reverse();
     });
+    await this.checkPythonProxyHealth();
+  }
+
+  private async checkPythonProxyHealth(): Promise<boolean> {
+    if (!this.scoringApiUrl) {
+      this.pythonProxyHealthy = false;
+      return false;
+    }
+    try {
+      const res = await fetch(`${this.scoringApiUrl}/health`, {
+        signal: AbortSignal.timeout(1500),
+      });
+      this.pythonProxyHealthy = res.ok;
+    } catch {
+      this.pythonProxyHealthy = false;
+    }
+    return this.pythonProxyHealthy;
   }
 
   public getReadiness(): ReadinessState {
@@ -152,7 +184,11 @@ export class CreditScoringService {
       this.contract.feature_columns.length === FEATURE_COLUMNS.length &&
       this.contract.feature_columns.every((col, idx) => col === FEATURE_COLUMNS[idx]);
 
-    const ready = this.modelLoaded && contractVerified && this.auditChannelHealthy;
+    const pythonRequiredAndDown =
+      Boolean(this.scoringApiUrl) && !this.allowPythonFallback && !this.pythonProxyHealthy;
+
+    const ready =
+      this.modelLoaded && contractVerified && this.auditChannelHealthy && !pythonRequiredAndDown;
     const storage = this.repo.getStorageInfo();
 
     let reason: string | undefined;
@@ -162,13 +198,18 @@ export class CreditScoringService {
       reason = 'Feature contract SHA-256 or tree ensemble schema mismatch.';
     } else if (!this.auditChannelHealthy) {
       reason = 'Compliance audit store (ops.inference_logs) is degraded; failing closed to preserve regulatory trail.';
+    } else if (pythonRequiredAndDown) {
+      reason = `Python LightGBM service (${this.scoringApiUrl}) is unreachable and ALLOW_PYTHON_FALLBACK=false; failing closed (503).`;
     }
 
     return {
       status: ready ? 'READY' : 'UNAVAILABLE',
       storage_backend: storage.backend,
       storage_note: storage.note,
-      model_engine: process.env.SCORING_API_URL ? 'python_lightgbm_proxy' : 'gbdt_tree_ensemble',
+      model_engine:
+        this.scoringApiUrl && this.pythonProxyHealthy
+          ? 'python_lightgbm_proxy'
+          : 'gbdt_tree_ensemble',
       model_loaded: this.modelLoaded,
       contract_verified: contractVerified,
       audit_channel_healthy: this.auditChannelHealthy,
@@ -242,7 +283,7 @@ export class CreditScoringService {
       contribMap.set(col, 0);
     }
 
-    let margin = this.modelArtifact.base_score_logit;
+    let margin = this.modelArtifact.base_score_logit ?? 0;
     const ruleHits: TreeRuleHit[] = [];
 
     for (const tree of this.modelArtifact.tree_info) {
@@ -256,7 +297,10 @@ export class CreditScoringService {
         const parentVal = node.internal_value ?? 0;
 
         let nextNode: TreeNode;
-        if (featVal <= node.threshold) {
+        const goLeft = Number.isFinite(featVal)
+          ? featVal <= node.threshold
+          : (node.default_left ?? true);
+        if (goLeft) {
           conditions.push(formatRuleCondition(featName, '<=', node.threshold));
           nextNode = node.left_child;
         } else {
@@ -286,7 +330,9 @@ export class CreditScoringService {
     }
 
     const rawProb = sigmoid(margin);
-    const calibratedLogit = this.modelArtifact.platt_a * margin + this.modelArtifact.platt_b;
+    const plattA = this.modelArtifact.platt_a ?? 1;
+    const plattB = this.modelArtifact.platt_b ?? 0;
+    const calibratedLogit = plattA * margin + plattB;
     const calibratedProb = Math.min(0.995, Math.max(0.005, sigmoid(calibratedLogit)));
 
     const attributions: FeatureAttribution[] = this.contract.feature_columns.map((col) => {
@@ -311,6 +357,56 @@ export class CreditScoringService {
       calibratedProb: Math.round(calibratedProb * 10000) / 10000,
       attributions,
       topTreeRules,
+    };
+  }
+
+  private async evaluateModel(features: FeatureVector): Promise<{
+    rawScore: number;
+    rawMargin: number;
+    calibratedProb: number;
+    attributions: FeatureAttribution[];
+    topTreeRules: TreeRuleHit[];
+    usedPythonProxy: boolean;
+    lightgbmVersion?: string;
+  }> {
+    if (this.scoringApiUrl) {
+      try {
+        const res = await fetch(`${this.scoringApiUrl}/score`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ features }),
+          signal: AbortSignal.timeout(2500),
+        });
+        if (!res.ok) {
+          throw new Error(`Python LightGBM HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as PythonScoreResponse;
+        this.pythonProxyHealthy = true;
+        return {
+          rawScore: data.raw_score,
+          rawMargin: data.raw_margin,
+          calibratedProb: data.calibrated_probability,
+          attributions: data.attributions,
+          topTreeRules: data.top_tree_rules,
+          usedPythonProxy: true,
+          lightgbmVersion: data.lightgbm_version,
+        };
+      } catch (err) {
+        this.pythonProxyHealthy = false;
+        if (!this.allowPythonFallback) {
+          const proxyErr = new Error(
+            `Python LightGBM service unavailable (${(err as Error).message}); failing closed (503).`
+          );
+          (proxyErr as Error & { statusCode?: number }).statusCode = 503;
+          throw proxyErr;
+        }
+      }
+    }
+
+    const local = this.evaluateGbdtEnsemble(features);
+    return {
+      ...local,
+      usedPythonProxy: false,
     };
   }
 
@@ -353,8 +449,16 @@ export class CreditScoringService {
     const tPitMs = Number(process.hrtime.bigint() - t1) / 1_000_000;
 
     const t2 = process.hrtime.bigint();
-    const { rawScore, rawMargin, calibratedProb, attributions, topTreeRules } =
-      this.evaluateGbdtEnsemble(pit.features);
+    const evalResult = await this.evaluateModel(pit.features);
+    const {
+      rawScore,
+      rawMargin,
+      calibratedProb,
+      attributions,
+      topTreeRules,
+      usedPythonProxy,
+      lightgbmVersion,
+    } = evalResult;
     const tTreeMs = Number(process.hrtime.bigint() - t2) / 1_000_000;
 
     const decision = this.applyContractThresholds(calibratedProb);
@@ -362,7 +466,7 @@ export class CreditScoringService {
     let leakageComparison: ScoreResponse['leakage_comparison'];
     if (includeLeakageAudit) {
       const leaky = computePointInTimeFeatures(events, asOfTimeIso, false);
-      const leakyEval = this.evaluateGbdtEnsemble(leaky.features);
+      const leakyEval = await this.evaluateModel(leaky.features);
       const leakyDecision = this.applyContractThresholds(leakyEval.calibratedProb);
       leakageComparison = {
         naive_probability: leakyEval.calibratedProb,
@@ -428,9 +532,13 @@ export class CreditScoringService {
       {
         step_number: 4,
         stage_id: 'ensemble',
-        title: `${this.contract.tree_count}-Tree GBDT Ensemble Traversal`,
+        title: usedPythonProxy
+          ? `Python LightGBM (${this.contract.tree_count}-Tree Booster)`
+          : `${this.contract.tree_count}-Tree GBDT Ensemble Traversal`,
         plain_summary: `Walked ${this.contract.tree_count} trained decision trees; strongest signal was "${topAttr?.label ?? 'wd_ratio'}".`,
-        technical_detail: `Evaluated SHA-256 verified gbdt_model.json (depth ${this.contract.max_depth}) yielding base+trees margin ${rawMargin.toFixed(4)}. Strongest tree rule: ${topRule?.path_summary ?? 'root'}.`,
+        technical_detail: usedPythonProxy
+          ? `Executed Python FastAPI lightgbm.Booster (${lightgbmVersion ?? '4.x'}) with pred_contrib=True TreeSHAP attributions (margin ${rawMargin.toFixed(4)}). Top rule: ${topRule?.path_summary ?? 'root'}.`
+          : `Evaluated SHA-256 verified LightGBM-compatible gbdt_model.json (depth ${this.contract.max_depth}) yielding margin ${rawMargin.toFixed(4)} and Saabas attributions. Top rule: ${topRule?.path_summary ?? 'root'}.`,
         live_output: `Tree margin ${rawMargin >= 0 ? '+' : ''}${rawMargin.toFixed(3)} (raw ${(rawScore * 100).toFixed(1)}%)`,
         duration_ms: Math.max(0.2, Math.round(tTreeMs * 100) / 100),
       },
@@ -439,7 +547,7 @@ export class CreditScoringService {
         stage_id: 'calibration',
         title: 'Platt Probability Calibration',
         plain_summary: `Converted raw tree votes into an honest ${(calibratedProb * 100).toFixed(2)}% real-world probability of default.`,
-        technical_detail: `Applied Platt logistic scaling (a=${this.modelArtifact.platt_a}, b=${this.modelArtifact.platt_b}) trained on OOT calibration fold (ECE ${(this.contract.validation_metrics.expected_calibration_error * 100).toFixed(2)}%).`,
+        technical_detail: `Applied Platt logistic scaling (a=${this.modelArtifact.platt_a ?? 1}, b=${this.modelArtifact.platt_b ?? 0}) trained on OOT calibration fold (ECE ${(this.contract.validation_metrics.expected_calibration_error * 100).toFixed(2)}%).`,
         live_output: `${(calibratedProb * 100).toFixed(2)}% calibrated PD`,
         duration_ms: 0.12,
       },
@@ -460,7 +568,7 @@ export class CreditScoringService {
       as_of_time: asOfTimeIso,
       scored_at: scoredAt,
       model_version: this.contract.model_version,
-      model_format: this.contract.model_format,
+      model_format: usedPythonProxy ? 'lightgbm_python_proxy' : this.contract.model_format,
       contract_version: this.contract.contract_version,
       raw_score: rawScore,
       calibrated_probability: calibratedProb,

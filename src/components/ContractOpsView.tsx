@@ -42,9 +42,9 @@ const AUDIT_REMEDIATIONS: {
     resolution: 'Pruned redundant columns to 10 orthogonal signals with explicit has_zero_deposits handling.',
   },
   {
-    area: 'Trained GBDT Ensemble & Honest Odds',
+    area: 'LightGBM Model & Honest Odds',
     issue: 'Unsafe pickle loading risked code execution, and raw tree outputs were not calibrated probabilities.',
-    resolution: 'Replaced with SHA-256 verified 40-tree GBDT JSON (LightGBM-compatible tree schema), exact Saabas path attribution, and Platt calibration.',
+    resolution: 'Uses Python LightGBM (python/train_lightgbm.py & FastAPI sidecar via SCORING_API_URL with TreeSHAP) or SHA-256 verified booster.dump_model() JSON tree traversal + Platt calibration.',
   },
 ];
 
