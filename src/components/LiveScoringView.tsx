@@ -141,8 +141,14 @@ export function LiveScoringView({
               activity.
             </p>
           </div>
-          <span className="text-xs font-mono text-slate-400 shrink-0">
-            Engine: {contract?.tree_count ?? 40}-Tree GBDT Ensemble · UTC
+          <span
+            className={`text-xs font-mono shrink-0 ${
+              scoreResult?.execution_engine === 'python_lightgbm'
+                ? 'text-emerald-400'
+                : 'text-blue-300'
+            }`}
+          >
+            Runtime: {scoreResult?.execution_engine_label ?? 'JSON Trees / Python LightGBM'} · UTC
           </span>
         </div>
 
@@ -309,9 +315,18 @@ export function LiveScoringView({
                   <StatusBadge variant={scoreResult.decision} />
                 </div>
                 <p className="text-xs text-slate-400 font-mono tabular-nums">
-                  Audit ID {scoreResult.request_id.slice(0, 8)} · Model {scoreResult.model_version}{' '}
-                  ({contract?.tree_count ?? 40} GBDT trees) · Policy {scoreResult.contract_version}{' '}
-                  · {scoreResult.latency_ms.toFixed(2)} ms
+                  Audit ID {scoreResult.request_id.slice(0, 8)} ·{' '}
+                  <span
+                    className={
+                      scoreResult.execution_engine === 'python_lightgbm'
+                        ? 'text-emerald-400 font-medium'
+                        : 'text-blue-300 font-medium'
+                    }
+                  >
+                    {scoreResult.execution_engine_label}
+                  </span>{' '}
+                  · Model {scoreResult.model_version} · Policy {scoreResult.contract_version} ·{' '}
+                  {scoreResult.latency_ms.toFixed(2)} ms
                 </p>
               </div>
 

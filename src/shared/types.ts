@@ -114,6 +114,9 @@ export interface ScoreResponse {
   scored_at: string;
   model_version: string;
   model_format: FeatureContract['model_format'];
+  execution_engine: 'python_lightgbm' | 'node_json_trees';
+  execution_engine_label: string;
+  lightgbm_version?: string;
   contract_version: string;
   raw_score: number;
   calibrated_probability: number;
@@ -193,6 +196,9 @@ export interface ReadinessState {
   storage_backend: 'postgres' | 'memory_fallback';
   storage_note: string;
   model_engine: 'gbdt_tree_ensemble' | 'python_lightgbm_proxy';
+  lightgbm_version?: string;
+  scoring_api_configured: boolean;
+  scoring_api_reachable: boolean;
   model_loaded: boolean;
   contract_verified: boolean;
   audit_channel_healthy: boolean;

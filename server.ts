@@ -32,8 +32,8 @@ async function startServer() {
   });
 
   // 2. Readiness probe (fails closed 503 if model, contract, or audit channel degraded)
-  app.get('/api/health/ready', (_req: Request, res: Response) => {
-    const readiness = scoringService.getReadiness();
+  app.get('/api/health/ready', async (_req: Request, res: Response) => {
+    const readiness = await scoringService.refreshReadiness();
     const httpStatus = readiness.status === 'READY' ? 200 : 503;
     res.status(httpStatus).json(readiness);
   });

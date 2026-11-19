@@ -268,6 +268,14 @@ export function ContractOpsView({
                     </span>
                   </div>
                   <p className="text-slate-400 pl-6">
+                    AI Engine:{' '}
+                    {readiness.model_engine === 'python_lightgbm_proxy'
+                      ? `Python LightGBM${readiness.lightgbm_version ? ` v${readiness.lightgbm_version}` : ''} (SCORING_API_URL reachable)`
+                      : readiness.scoring_api_configured
+                        ? 'Node JSON Trees (SCORING_API_URL unreachable — fallback active)'
+                        : 'Node JSON Trees (gbdt_model.json · SCORING_API_URL not set)'}
+                  </p>
+                  <p className="text-slate-400 pl-6">
                     Database:{' '}
                     {readiness.storage_backend === 'postgres'
                       ? 'PostgreSQL (Pooled)'

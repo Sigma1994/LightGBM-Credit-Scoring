@@ -102,7 +102,11 @@ export class CreditScoringService {
   private modelLoaded = true;
   private auditChannelHealthy = true;
   private pythonProxyHealthy = false;
-  private readonly scoringApiUrl = (process.env.SCORING_API_URL || '').trim().replace(/\/+$/, '');
+  private pythonLightgbmVersion: string | undefined;
+  private readonly scoringApiUrl = (() => {
+    const raw = (process.env.SCORING_API_URL || '').trim().replace(/\/+$/, '');
+    return /^https?:\/\/.+/.test(raw) ? raw : '';
+  })();
   private readonly allowPythonFallback = process.env.ALLOW_PYTHON_FALLBACK !== 'false';
   private readonly repo = new CreditRepository();
 
@@ -164,17 +168,37 @@ export class CreditScoringService {
   private async checkPythonProxyHealth(): Promise<boolean> {
     if (!this.scoringApiUrl) {
       this.pythonProxyHealthy = false;
+      this.pythonLightgbmVersion = undefined;
       return false;
     }
     try {
       const res = await fetch(`${this.scoringApiUrl}/health`, {
         signal: AbortSignal.timeout(1500),
       });
-      this.pythonProxyHealthy = res.ok;
+      if (res.ok) {
+        const body = (await res.json()) as {
+          status?: string;
+          engine?: string;
+          lightgbm_version?: string;
+        };
+        if (body.engine === 'python_lightgbm' && typeof body.lightgbm_version === 'string') {
+          this.pythonProxyHealthy = true;
+          this.pythonLightgbmVersion = body.lightgbm_version;
+          return true;
+        }
+      }
+      this.pythonProxyHealthy = false;
+      this.pythonLightgbmVersion = undefined;
     } catch {
       this.pythonProxyHealthy = false;
+      this.pythonLightgbmVersion = undefined;
     }
     return this.pythonProxyHealthy;
+  }
+
+  public async refreshReadiness(): Promise<ReadinessState> {
+    await this.checkPythonProxyHealth();
+    return this.getReadiness();
   }
 
   public getReadiness(): ReadinessState {
@@ -210,6 +234,9 @@ export class CreditScoringService {
         this.scoringApiUrl && this.pythonProxyHealthy
           ? 'python_lightgbm_proxy'
           : 'gbdt_tree_ensemble',
+      lightgbm_version: this.pythonLightgbmVersion,
+      scoring_api_configured: Boolean(this.scoringApiUrl),
+      scoring_api_reachable: this.pythonProxyHealthy,
       model_loaded: this.modelLoaded,
       contract_verified: contractVerified,
       audit_channel_healthy: this.auditChannelHealthy,
@@ -381,7 +408,14 @@ export class CreditScoringService {
           throw new Error(`Python LightGBM HTTP ${res.status}`);
         }
         const data = (await res.json()) as PythonScoreResponse;
+        if (
+          data.engine !== 'python_lightgbm' ||
+          typeof data.calibrated_probability !== 'number'
+        ) {
+          throw new Error('Upstream SCORING_API_URL did not return a valid python_lightgbm payload.');
+        }
         this.pythonProxyHealthy = true;
+        this.pythonLightgbmVersion = data.lightgbm_version;
         return {
           rawScore: data.raw_score,
           rawMargin: data.raw_margin,
@@ -562,6 +596,11 @@ export class CreditScoringService {
       },
     ];
 
+    const executionEngine = usedPythonProxy ? 'python_lightgbm' : 'node_json_trees';
+    const executionEngineLabel = usedPythonProxy
+      ? `Python LightGBM ${lightgbmVersion ?? ''} (FastAPI + TreeSHAP)`.trim()
+      : 'Node JSON Trees (gbdt_model.json)';
+
     return {
       request_id: requestId,
       customer_id: customerId,
@@ -569,6 +608,9 @@ export class CreditScoringService {
       scored_at: scoredAt,
       model_version: this.contract.model_version,
       model_format: usedPythonProxy ? 'lightgbm_python_proxy' : this.contract.model_format,
+      execution_engine: executionEngine,
+      execution_engine_label: executionEngineLabel,
+      lightgbm_version: lightgbmVersion,
       contract_version: this.contract.contract_version,
       raw_score: rawScore,
       calibrated_probability: calibratedProb,

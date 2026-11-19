@@ -110,8 +110,41 @@ export function Sidebar({
           <dl className="space-y-1.5 text-xs text-slate-400">
             <div className="flex items-center justify-between gap-2">
               <dt className="text-slate-500">AI Engine</dt>
-              <dd className="font-mono text-slate-200 truncate">
-                {readiness.model_engine === 'python_lightgbm_proxy' ? 'Python LightGBM' : '40-Tree GBDT'}
+              <dd
+                className={`font-mono truncate ${
+                  readiness.model_engine === 'python_lightgbm_proxy'
+                    ? 'text-emerald-400'
+                    : 'text-blue-300'
+                }`}
+                title={
+                  readiness.model_engine === 'python_lightgbm_proxy'
+                    ? `Connected to Python FastAPI LightGBM ${readiness.lightgbm_version ?? ''}`
+                    : readiness.scoring_api_configured
+                      ? 'SCORING_API_URL unreachable; running Node JSON tree fallback'
+                      : 'SCORING_API_URL not set; running Node JSON trees (gbdt_model.json)'
+                }
+              >
+                {readiness.model_engine === 'python_lightgbm_proxy'
+                  ? `Python LightGBM${readiness.lightgbm_version ? ` v${readiness.lightgbm_version}` : ''}`
+                  : 'JSON Trees (Node)'}
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-slate-500">Python API</dt>
+              <dd
+                className={`font-mono truncate ${
+                  readiness.scoring_api_reachable
+                    ? 'text-emerald-400'
+                    : readiness.scoring_api_configured
+                      ? 'text-amber-400'
+                      : 'text-slate-400'
+                }`}
+              >
+                {readiness.scoring_api_reachable
+                  ? 'Connected'
+                  : readiness.scoring_api_configured
+                    ? 'Unreachable (Fallback)'
+                    : 'Not Configured'}
               </dd>
             </div>
             <div className="flex items-center justify-between gap-2">

@@ -111,9 +111,10 @@ export function PipelineDemoView({
             <div className="pt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono tabular-nums text-slate-400">
               <span className={isPythonProxyActive ? 'text-emerald-400' : 'text-blue-400'}>
                 Active Engine:{' '}
-                {isPythonProxyActive
-                  ? 'Python LightGBM FastAPI (TreeSHAP)'
-                  : 'Node LightGBM-Schema Tree Walker (gbdt_model.json)'}
+                {scoreResult?.execution_engine_label ??
+                  (isPythonProxyActive
+                    ? `Python LightGBM ${readiness?.lightgbm_version ?? ''} (FastAPI + TreeSHAP)`.trim()
+                    : 'Node JSON Trees (gbdt_model.json — Python sidecar not connected)')}
               </span>
               <span className="text-slate-600">·</span>
               <span>Model {contract?.model_version ?? 'gbdt-3.0.0-platt'}</span>
