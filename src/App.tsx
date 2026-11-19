@@ -332,6 +332,7 @@ export default function App() {
                   onChangeAsOfTime={setAsOfTime}
                   scoreResult={scoreResult}
                   contract={contract}
+                  readiness={readiness}
                   isScoring={isScoring}
                   onRunScore={() => void runScore()}
                 />

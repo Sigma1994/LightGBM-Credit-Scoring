@@ -1,8 +1,21 @@
-import { ArrowRight, CheckCircle2, GitFork, Play, RotateCcw } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  Copy,
+  Cpu,
+  FileJson,
+  GitFork,
+  Play,
+  RotateCcw,
+  Server,
+  Terminal,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type {
   CustomerSummary,
   FeatureContract,
+  ReadinessState,
   ScoreResponse,
 } from '../shared/types.ts';
 import { StatusBadge } from './StatusBadge.tsx';
@@ -17,9 +30,15 @@ interface PipelineDemoViewProps {
   onChangeAsOfTime: (iso: string) => void;
   scoreResult: ScoreResponse | null;
   contract: FeatureContract | null;
+  readiness: ReadinessState | null;
   isScoring: boolean;
   onRunScore: () => void;
 }
+
+const SYNC_COMMANDS = `pip install -r python/requirements.txt
+python python/train_lightgbm.py
+# Option A (Cloud Preview / Zero-Python Node): commit server/artifacts/gbdt_model.json + feature_contract.json
+# Option B (Live Local Python Sidecar): uvicorn python.api:app --host 0.0.0.0 --port 8000`;
 
 export function PipelineDemoView({
   customers,
@@ -29,14 +48,19 @@ export function PipelineDemoView({
   onChangeAsOfTime,
   scoreResult,
   contract,
+  readiness,
   isScoring,
   onRunScore,
 }: PipelineDemoViewProps) {
   const [lens, setLens] = useState<AudienceLens>('dual');
   const [activeStageIdx, setActiveStageIdx] = useState(0);
   const [isStepping, setIsStepping] = useState(false);
+  const [copiedCmd, setCopiedCmd] = useState(false);
 
   const steps = scoreResult?.walk_along_steps ?? [];
+  const isPythonProxyActive =
+    scoreResult?.model_format === 'lightgbm_python_proxy' ||
+    readiness?.model_engine === 'python_lightgbm_proxy';
 
   useEffect(() => {
     if (!isStepping || steps.length === 0) return;
@@ -58,6 +82,16 @@ export function PipelineDemoView({
     onRunScore();
   };
 
+  const handleCopyCommands = async () => {
+    try {
+      await navigator.clipboard.writeText(SYNC_COMMANDS);
+      setCopiedCmd(true);
+      window.setTimeout(() => setCopiedCmd(false), 1800);
+    } catch {
+      setCopiedCmd(false);
+    }
+  };
+
   const activeStep = steps[activeStageIdx] ?? steps[0];
 
   return (
@@ -65,15 +99,33 @@ export function PipelineDemoView({
       {/* Boardroom Controls & Audience Lens */}
       <section className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <h2 className="font-display text-lg font-semibold text-slate-100">
-              Live Intelligence Layer Walk-Along
+              Live Intelligence Layer Walk-Along (LightGBM Architecture)
             </h2>
             <p className="text-sm text-slate-400 max-w-2xl">
-              Step through the real {contract?.tree_count ?? 40}-tree Gradient Boosted Decision Tree
-              execution trace for any applicant—toggle between plain-language executive framing and
-              ML engineering details.
+              Trace how raw ledger history passes through Point-in-Time isolation, {contract?.tree_count ?? 40}-tree
+              gradient-boosted scoring, Platt calibration, and policy enforcement—with dual-mode execution for
+              Python LightGBM or zero-dependency JSON tree inference.
             </p>
+            <div className="pt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono tabular-nums text-slate-400">
+              <span className={isPythonProxyActive ? 'text-emerald-400' : 'text-blue-400'}>
+                Active Engine:{' '}
+                {isPythonProxyActive
+                  ? 'Python LightGBM FastAPI (TreeSHAP)'
+                  : 'Node LightGBM-Schema Tree Walker (gbdt_model.json)'}
+              </span>
+              <span className="text-slate-600">·</span>
+              <span>Model {contract?.model_version ?? 'gbdt-3.0.0-platt'}</span>
+              {contract && (
+                <>
+                  <span className="text-slate-600">·</span>
+                  <span>OOT ROC-AUC {contract.validation_metrics.oot_roc_auc.toFixed(4)}</span>
+                  <span className="text-slate-600">·</span>
+                  <span>KS {contract.validation_metrics.ks_statistic.toFixed(3)}</span>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -276,22 +328,24 @@ export function PipelineDemoView({
                   {activeStep.technical_detail}
                 </p>
                 <p className="text-xs text-slate-400 font-mono">
-                  Request UUID: {scoreResult.request_id.slice(0, 8)} · Step Runtime:{' '}
-                  {activeStep.duration_ms.toFixed(2)} ms
+                  Request UUID: {scoreResult.request_id.slice(0, 8)} · Attribution:{' '}
+                  {isPythonProxyActive ? 'LightGBM pred_contrib=True (TreeSHAP)' : 'Saabas Tree-Path Delta'}
                 </p>
               </div>
             )}
           </div>
 
-          {/* Live Tree Rules Evidence when inspecting GBDT ensemble */}
+          {/* Live Tree Rules Evidence */}
           <div className="px-6 py-5 border-t border-slate-800 bg-slate-950/60 space-y-3">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
                 <GitFork className="h-3.5 w-3.5 text-blue-400" aria-hidden="true" />
                 <span>Actual Decision Tree Splits Executed for {scoreResult.customer_id}</span>
               </div>
               <span className="text-xs font-mono text-slate-500">
-                Saabas tree-path attribution active
+                {isPythonProxyActive
+                  ? 'Live Python lightgbm.Booster + TreeSHAP'
+                  : 'LightGBM tree_info JSON + Saabas attribution'}
               </span>
             </div>
 
@@ -327,6 +381,129 @@ export function PipelineDemoView({
           </div>
         </section>
       )}
+
+      {/* LightGBM Training-to-Serving Parity Architecture */}
+      <section className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="font-display text-base font-semibold text-slate-100">
+              How Python LightGBM Powers Both Local &amp; Cloud Serving
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Train once in Python LightGBM, then run via live FastAPI sidecar or commit the exported
+              tree contract so zero-Python cloud containers execute the exact same splits
+            </p>
+          </div>
+          <span className="text-xs font-mono text-slate-400">
+            Contract SHA-256: {contract?.artifact_sha256.slice(0, 12) ?? 'verified'}...
+          </span>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {(lens === 'dual' || lens === 'executive') && (
+            <div className="rounded-lg bg-slate-950/60 border border-slate-800 p-4 text-xs leading-relaxed text-slate-300">
+              <span className="font-semibold text-emerald-300">Executive Summary: </span>
+              Think of Python LightGBM as the master risk architect that learns 40 decision trees from
+              historical loans. Once trained, it publishes a tamper-proof rulebook (
+              <code className="font-mono text-slate-200">gbdt_model.json</code>). Your local Docker or
+              API server can run the live Python engine directly, while lightweight cloud previews read
+              that exact rulebook—guaranteeing 100% identical credit decisions without heavyweight Python
+              dependencies in the web container.
+            </div>
+          )}
+
+          {/* 3-Step Dual-Path Parity Flow */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs text-blue-400 font-semibold">01 · Offline Training</span>
+                <Cpu className="h-4 w-4 text-blue-400" aria-hidden="true" />
+              </div>
+              <h4 className="font-display text-sm font-semibold text-slate-100">
+                Train Python LightGBM + Platt Calibrator
+              </h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Run <code className="font-mono text-slate-200">python/train_lightgbm.py</code> on strict
+                Out-of-Time PIT snapshots. Fits 40 depth-3 trees (<code className="font-mono text-slate-200">LGBMClassifier</code>)
+                and logistic calibration, then validates ROC-AUC, KS, Brier, and ECE on future loans.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs text-emerald-400 font-semibold">02 · Dual Export</span>
+                <FileJson className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+              </div>
+              <h4 className="font-display text-sm font-semibold text-slate-100">
+                Emit Native Booster + Tree JSON Contract
+              </h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Saves <code className="font-mono text-slate-200">lightgbm_model.txt</code> for Python and
+                calls <code className="font-mono text-slate-200">booster.dump_model()</code> to write{' '}
+                <code className="font-mono text-slate-200">server/artifacts/gbdt_model.json</code> + SHA-256
+                signed <code className="font-mono text-slate-200">feature_contract.json</code>.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs text-slate-300 font-semibold">03 · Two Serving Modes</span>
+                <Server className="h-4 w-4 text-slate-300" aria-hidden="true" />
+              </div>
+              <h4 className="font-display text-sm font-semibold text-slate-100">
+                Live FastAPI Sidecar or Zero-Python Node
+              </h4>
+              <ul className="text-xs text-slate-400 space-y-1.5 leading-relaxed">
+                <li>
+                  <span className={isPythonProxyActive ? 'text-emerald-400 font-medium' : 'text-slate-200 font-medium'}>
+                    Mode A (SCORING_API_URL set):
+                  </span>{' '}
+                  Node forwards PIT features to <code className="font-mono text-slate-200">python/api.py</code>{' '}
+                  for live <code className="font-mono text-slate-200">lightgbm.Booster</code> + TreeSHAP.
+                </li>
+                <li>
+                  <span className={!isPythonProxyActive ? 'text-blue-400 font-medium' : 'text-slate-200 font-medium'}>
+                    Mode B (Cloud Preview / Unset):
+                  </span>{' '}
+                  Node traverses the committed LightGBM-dumped{' '}
+                  <code className="font-mono text-slate-200">gbdt_model.json</code> trees directly.
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {(lens === 'dual' || lens === 'technical') && (
+            <div className="rounded-xl bg-slate-950 border border-slate-800 overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
+                  <Terminal className="h-3.5 w-3.5 text-blue-400" aria-hidden="true" />
+                  <span>Workflow: Export Local Python LightGBM Trees to Cloud Preview or Run Sidecar</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyCommands()}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 text-[11px] font-medium text-slate-300 transition-colors"
+                >
+                  {copiedCmd ? (
+                    <>
+                      <Check className="h-3 w-3 text-emerald-400" aria-hidden="true" />
+                      <span className="text-emerald-300">Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" aria-hidden="true" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="p-4 text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed">
+                {SYNC_COMMANDS}
+              </pre>
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
