@@ -1,0 +1,6 @@
+{
+  "name": "AegisCredit Risk Console",
+  "description": "Production credit risk scoring, point-in-time feature store, PSI drift monitoring, and contract-enforced underwriting console.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

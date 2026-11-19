@@ -1,0 +1,287 @@
+{
+  "contract_version": "2026.11.19",
+  "model_version": "gbdt-3.0.0-platt",
+  "model_format": "gbdt_tree_json",
+  "tree_count": 40,
+  "max_depth": 3,
+  "artifact_sha256": "9218cb9ba74ab2611462d4abd3eef8f8275a85101839b3e1d332d6746d5a02f6",
+  "created_at_utc": "2026-11-19T20:34:11.910Z",
+  "feature_columns": [
+    "total_deposits",
+    "total_withdrawals",
+    "wd_ratio",
+    "has_zero_deposits",
+    "tx_count",
+    "repayment_count",
+    "repayment_rate",
+    "avg_tx_amount",
+    "account_tenure_days",
+    "days_since_last_event"
+  ],
+  "thresholds": {
+    "approve_max_prob": 0.35,
+    "manual_review_max_prob": 0.65
+  },
+  "validation_metrics": {
+    "split_strategy": "Out-of-Time (Train <= 2026-09-01, Cal <= 2026-09-20, OOT > 2026-09-20) · PIT-extracted",
+    "oot_roc_auc": 0.9264,
+    "pr_auc": 0.8527,
+    "ks_statistic": 0.754,
+    "brier_score": 0.0917,
+    "expected_calibration_error": 0.0378,
+    "training_samples": 2665,
+    "oot_samples": 814
+  },
+  "calibration_bins": [
+    {
+      "bin_label": "0.00 - 0.20",
+      "mean_predicted_prob": 0.039,
+      "observed_default_rate": 0.063,
+      "sample_count": 511
+    },
+    {
+      "bin_label": "0.20 - 0.40",
+      "mean_predicted_prob": 0.269,
+      "observed_default_rate": 0.306,
+      "sample_count": 36
+    },
+    {
+      "bin_label": "0.40 - 0.60",
+      "mean_predicted_prob": 0.51,
+      "observed_default_rate": 0.65,
+      "sample_count": 20
+    },
+    {
+      "bin_label": "0.60 - 0.80",
+      "mean_predicted_prob": 0.724,
+      "observed_default_rate": 0.677,
+      "sample_count": 31
+    },
+    {
+      "bin_label": "0.80 - 1.00",
+      "mean_predicted_prob": 0.917,
+      "observed_default_rate": 0.856,
+      "sample_count": 216
+    }
+  ],
+  "baseline_distributions": {
+    "total_deposits": [
+      {
+        "label": "< $1,500",
+        "min": 0,
+        "max": 1500,
+        "expected_share": 0.1493
+      },
+      {
+        "label": "$1,500 - $4,000",
+        "min": 1500,
+        "max": 4000,
+        "expected_share": 0.3291
+      },
+      {
+        "label": "$4,000 - $8,000",
+        "min": 4000,
+        "max": 8000,
+        "expected_share": 0.2281
+      },
+      {
+        "label": "> $8,000",
+        "min": 8000,
+        "max": 1000000000000,
+        "expected_share": 0.2934
+      }
+    ],
+    "total_withdrawals": [
+      {
+        "label": "< $1,000",
+        "min": 0,
+        "max": 1000,
+        "expected_share": 0.23
+      },
+      {
+        "label": "$1,000 - $3,000",
+        "min": 1000,
+        "max": 3000,
+        "expected_share": 0.5415
+      },
+      {
+        "label": "$3,000 - $6,000",
+        "min": 3000,
+        "max": 6000,
+        "expected_share": 0.1261
+      },
+      {
+        "label": "> $6,000",
+        "min": 6000,
+        "max": 1000000000000,
+        "expected_share": 0.1024
+      }
+    ],
+    "wd_ratio": [
+      {
+        "label": "0.00 - 0.45",
+        "min": 0,
+        "max": 0.45,
+        "expected_share": 0.5974
+      },
+      {
+        "label": "0.45 - 0.75",
+        "min": 0.45,
+        "max": 0.75,
+        "expected_share": 0.0705
+      },
+      {
+        "label": "0.75 - 1.00",
+        "min": 0.75,
+        "max": 1,
+        "expected_share": 0.0375
+      },
+      {
+        "label": "> 1.00",
+        "min": 1,
+        "max": 1000000000000,
+        "expected_share": 0.2946
+      }
+    ],
+    "has_zero_deposits": [
+      {
+        "label": "Has Deposits (0)",
+        "min": 0,
+        "max": 0.5,
+        "expected_share": 0.9471
+      },
+      {
+        "label": "Zero Deposits (1)",
+        "min": 0.5,
+        "max": 2,
+        "expected_share": 0.0529
+      }
+    ],
+    "tx_count": [
+      {
+        "label": "0 - 5 tx",
+        "min": 0,
+        "max": 5,
+        "expected_share": 0.3054
+      },
+      {
+        "label": "5 - 12 tx",
+        "min": 5,
+        "max": 12,
+        "expected_share": 0.5951
+      },
+      {
+        "label": "12 - 20 tx",
+        "min": 12,
+        "max": 20,
+        "expected_share": 0.0994
+      },
+      {
+        "label": "20+ tx",
+        "min": 20,
+        "max": 1000000000000,
+        "expected_share": 0.01
+      }
+    ],
+    "repayment_count": [
+      {
+        "label": "0 - 1",
+        "min": 0,
+        "max": 2,
+        "expected_share": 0.4732
+      },
+      {
+        "label": "2 - 4",
+        "min": 2,
+        "max": 5,
+        "expected_share": 0.4439
+      },
+      {
+        "label": "5+",
+        "min": 5,
+        "max": 1000000000000,
+        "expected_share": 0.0829
+      }
+    ],
+    "repayment_rate": [
+      {
+        "label": "0.00 - 0.15",
+        "min": 0,
+        "max": 0.15,
+        "expected_share": 0.3644
+      },
+      {
+        "label": "0.15 - 0.40",
+        "min": 0.15,
+        "max": 0.4,
+        "expected_share": 0.1959
+      },
+      {
+        "label": "0.40+",
+        "min": 0.4,
+        "max": 1000000000000,
+        "expected_share": 0.4398
+      }
+    ],
+    "avg_tx_amount": [
+      {
+        "label": "< $120",
+        "min": 0,
+        "max": 120,
+        "expected_share": 0.01
+      },
+      {
+        "label": "$120 - $280",
+        "min": 120,
+        "max": 280,
+        "expected_share": 0.4773
+      },
+      {
+        "label": "$280+",
+        "min": 280,
+        "max": 1000000000000,
+        "expected_share": 0.5227
+      }
+    ],
+    "account_tenure_days": [
+      {
+        "label": "< 21d",
+        "min": 0,
+        "max": 21,
+        "expected_share": 0.1906
+      },
+      {
+        "label": "21d - 60d",
+        "min": 21,
+        "max": 60,
+        "expected_share": 0.5445
+      },
+      {
+        "label": "60d+",
+        "min": 60,
+        "max": 1000000000000,
+        "expected_share": 0.2649
+      }
+    ],
+    "days_since_last_event": [
+      {
+        "label": "< 2d",
+        "min": 0,
+        "max": 2,
+        "expected_share": 0.2349
+      },
+      {
+        "label": "2d - 7d",
+        "min": 2,
+        "max": 7,
+        "expected_share": 0.4919
+      },
+      {
+        "label": "7d+",
+        "min": 7,
+        "max": 1000000000000,
+        "expected_share": 0.2732
+      }
+    ]
+  }
+}
